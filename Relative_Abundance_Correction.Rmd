@@ -1,0 +1,307 @@
+---
+title: 'Computational Meeting: Relative Abundance Correction'
+author: "Aaron Fehr"
+date: "2023-04-24"
+output:
+  pdf_document: default
+  html_document: default
+---
+ 
+The Following Script contains a script and tests thereof for the correction of
+peptide intensities for relative abundance changes in the protein concentration.
+It was specifically written for LiP data but can also be applied to PTM data.
+The function was written based on the approach described by Devon Kohler et al. 
+in https://doi.org/10.1016/j.mcpro.2022.100477 and implemented in the R package
+MSstatsPTM.
+
+In brief, the relative change on the peptide level is corrected for by division
+with the relative change on the protein level. For the statistical test, the 
+pooled standard deviation as well as the tvalue is calculated. The effective 
+degree of freedom are calculated using the Satterthwaite approximation in order
+to take into account that the protein and peptide intensities are not fully
+independent measurements.
+
+As input, the script takes two differential abundance tables on peptide and 
+protein level. They can be obtained by using the "calculate_diff_abundance()"
+function in the Protti package.
+The peptide table has to contain the columns:
+
+1. Protein names
+2. Peptide id's
+3. log2 fold change
+4. Standard error
+5. Number of observations
+
+The protein table has to contain the columns:
+
+1. Protein names
+2. log2 fold change
+3. Standard error
+4. Number of observations
+
+The Data used for this demonstration is LiP-School data (Rapamycin treated HeLa 
+lysate, quadruplicates) which was generated together with Ludovic Gillet. It was 
+analysed using MSstatsLiP with the "LiP-MS_data_analysis_case_control" script in 
+https://github.com/PicottiGroup/ Data-analysis-of-LiP-MS-data-for-high-
+throughput-applications.git without imputation by Valentina Capelletti. 
+
+
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(ggvenn)
+library(protti)
+```
+
+```{r}
+# Import of data:
+
+MSstats_LiP_raw = read.csv("./CM_Data/LiPschool_msstats_model_RAW.csv")
+
+MSstats_Trp_raw = read.csv("./CM_Data/LiPschool_msstats_model_PROTEIN.csv")
+
+MSstats_Adj_raw = read.csv("./CM_Data/LiPschool_msstats_model_ADJUSTED.csv")
+```
+
+
+```{r}
+# Adapt columns so that they match protti output from calculate_diff_abundance()
+
+MSstats_LiP = MSstats_LiP_raw  %>%
+  dplyr::select(ProteinName, 
+                PeptideSequence, 
+                std_error = SE, 
+                diff = log2FC, 
+                n_obs = DF) %>% 
+  mutate(n_obs = n_obs + 2)
+
+glimpse(MSstats_LiP)
+
+MSstats_Trp = MSstats_Trp_raw %>%
+  dplyr::select(ProteinName = Protein, 
+                std_error = SE, 
+                diff = log2FC, 
+                n_obs = DF) %>%
+  mutate(n_obs = n_obs + 2)
+
+glimpse(MSstats_Trp)
+
+# Adapt column names for MSstats adjusted table to match the function output
+MSstats_Adj = MSstats_Adj_raw %>%
+  dplyr::select(ProteinName, 
+                PeptideSequence, 
+                adj_diff = log2FC, 
+                adj_std_error = SE, 
+                df = DF, 
+                tval = Tvalue, 
+                pval = pvalue, p.adj = 
+                  adj.pvalue)
+
+glimpse(MSstats_Adj)
+```
+
+```{r}
+# Manual correction for relative abundance changes:
+
+ErrorPropagationTest = MSstats_LiP %>%
+  # Join Tryptic data
+  inner_join(MSstats_Trp,
+            by = c("ProteinName"), suffix = c("_pep","_prot")) %>%
+  # Adjust log2FC
+  mutate(adj_diff = diff_pep-diff_prot) %>%
+  # Calculate pooled std deviation
+  mutate(adj_std_error = sqrt(std_error_pep**2 + std_error_prot**2)) %>% 
+  # Calculate numerator of Satterthwaite equation
+  mutate(numer = (std_error_pep**2 + std_error_prot**2)**2) %>%
+  # Calculate denominator of Satterthwaite equation
+  mutate(denom = (std_error_pep**4/(n_obs_pep-2) + 
+                    std_error_prot**4/(n_obs_prot-2))) %>% 
+  # Calculate DF with Satterthwaite equation
+  mutate(df = numer/denom) %>%
+  # Calculate tvalue
+  mutate(tval = adj_diff/adj_std_error) %>% # Calculate Tvalue
+  #Caluculate pvalue
+  mutate(pval = 2*stats::pt(abs(tval), df, lower.tail = FALSE)) %>% 
+  # Calculate adj. pvalue using Benjamini Hochberg
+  mutate(p.adj = p.adjust(pval, method = "BH")) %>%
+  #Join MSstats Adjusted data table
+  left_join(MSstats_Adj, by = c("ProteinName", "PeptideSequence"), 
+            suffix = c("_Function","_MSstats"))
+
+
+# Count identical values
+# ErrorPropagationTest has 27931 rows. 2 peptides have a change of -Inf
+
+# Degrees of freedom
+sum(round(ErrorPropagationTest$df_Function,5) == 
+      round(ErrorPropagationTest$df_MSstats,5), na.rm = TRUE)
+
+# adjusted Log2FC
+sum(ErrorPropagationTest$adj_diff_Function == 
+      ErrorPropagationTest$adj_diff_MSstats, na.rm = TRUE)
+
+# Pooled Standard deviation
+sum(ErrorPropagationTest$adj_std_error_Function == 
+      ErrorPropagationTest$adj_std_error_MSstats, na.rm = TRUE)
+
+# T-value
+sum(ErrorPropagationTest$tval_Function == 
+      ErrorPropagationTest$tval_MSstats, na.rm = TRUE)
+
+# P-value
+sum(round(ErrorPropagationTest$pval_Function,5) == 
+      round(ErrorPropagationTest$pval_MSstats,5), na.rm = TRUE)
+
+# BH adjusted P-value
+sum(round(ErrorPropagationTest$p.adj_Function,5) == 
+      round(ErrorPropagationTest$p.adj_MSstats,5), na.rm = TRUE)
+
+
+ErrorPropagationTest %>%
+  ggplot(aes(x=df_MSstats,y=df_Function)) +
+  geom_point() +
+  theme_bw() +
+  labs(title = "Degrees of freedom", x = "MSstats", y = "New Function")
+
+
+ErrorPropagationTest %>%
+  ggplot(aes(x=adj_std_error_MSstats,y=adj_std_error_Function)) +
+  geom_point() +
+  theme_bw() +
+  labs(title = "Degrees of freedom", x = "MSstats", y = "New Function")
+
+
+ErrorPropagationTest %>%
+  ggplot(aes(x=adj_diff_MSstats, y=adj_diff_Function)) +
+  geom_point() +
+  theme_bw() +
+  labs(title = "Adjusted Log2FC", x = "MSstats", y = "New Function")
+
+
+ErrorPropagationTest %>%
+  ggplot(aes(x=pval_MSstats, y=pval_Function)) +
+  geom_point() +
+  theme_bw() +
+  labs(title = "Degrees of freedom", x = "MSstats", y = "New Function")
+
+
+```
+
+```{r}
+# Correction for abundance changes with normal calculation of degrees of freedom
+# by calculatin the sum of observations -2
+
+OldErrorPropagation = MSstats_LiP %>%
+  inner_join(MSstats_Trp,
+            by = c("ProteinName"), suffix = c("_pep","_prot")) %>%
+  mutate(adj_diff = diff_pep-diff_prot) %>%
+  mutate(adj_std_error = sqrt(std_error_pep**2 + std_error_prot**2)) %>%
+  mutate(numer = (std_error_pep**2 + std_error_prot**2)**2) %>%
+  mutate(denom = (std_error_pep**4/(n_obs_pep-2) + 
+                    std_error_prot**4/(n_obs_prot-2))) %>%
+  mutate(df = n_obs_pep + n_obs_prot - 2) %>% # NO SATTERTHWAITE APPROXIMATION
+  mutate(tval = adj_diff/adj_std_error) %>%
+  mutate(pval = 2*stats::pt(abs(tval), df, lower.tail = FALSE)) %>%
+  mutate(p.adj = p.adjust(pval, method = "BH")) %>%
+  left_join(MSstats_Adj, by = c("ProteinName", "PeptideSequence"), 
+            suffix = c("_Function","_MSstats"))
+
+
+
+
+OldErrorPropagation %>%
+  ggplot(aes(x=df_MSstats,y=df_Function)) +
+  geom_point() +
+  theme_bw() +
+  labs(title = "Degrees of freedom", x = "MSstats", y = "New Function")
+
+OldErrorPropagation %>%
+  ggplot(aes(x=tval_MSstats, y=tval_Function)) +
+  geom_point() +
+  theme_bw() +
+  labs(title = "T-values", x = "MSstats", y = "New Function")
+
+
+OldErrorPropagation %>%
+  ggplot(aes(x=adj_diff_MSstats, y=adj_diff_Function)) +
+  geom_point() +
+  theme_bw() +
+  labs(title = "Adjusted Log2FC", x = "MSstats", y = "New Function")
+
+
+
+OldErrorPropagation %>%
+  ggplot(aes(x=pval_MSstats, y=pval_Function)) +
+  geom_point() +
+  theme_bw() +
+  labs(title = "P-value", x = "MSstats", y = "New Function")
+
+OldErrorPropagation %>%
+  ggplot(aes(x=p.adj_MSstats, y=p.adj_Function)) +
+  geom_point() +
+  theme_bw() +
+  labs(title = "Adj P-value", x = "MSstats", y = "New Function")
+```
+
+
+```{r}
+# Venn diagramm of significant peptides using adj pvalue <= 0.05
+
+OldErrorPropagation %>%
+  mutate(Sig_MSstats = p.adj_MSstats <= 0.05) %>%
+  mutate(Sig_Function = p.adj_Function <= 0.05) %>%
+  drop_na() %>%
+  ggvenn(c("Sig_MSstats","Sig_Function"), fill_color = c("blue","red"))
+
+
+
+target = "P62942"
+
+# Volcano plot using Satterthwaite approximated columns
+
+volcano_plot(
+  data = OldErrorPropagation,
+  grouping = PeptideSequence,
+  log2FC = adj_diff_MSstats,
+  significance = pval_MSstats,
+  method = "target",
+  target_column = ProteinName,
+  target = target,
+  x_axis_label = "log2(fold change) Rapa vs DMSO",
+  significance_cutoff = c(0.05, "p.adj_MSstats"),
+  interactive = FALSE
+) +
+  labs(title = "With Satterthwaite approximation",
+       subtitle = "On peptide level, dotted line indicates FDR of 0.05 with BH")
+
+# Volcano plot using df = 14 columns
+
+volcano_plot(
+  data = OldErrorPropagation,
+  grouping = PeptideSequence,
+  log2FC = adj_diff_Function,
+  significance = pval_Function,
+  method = "target",
+  target_column = ProteinName,
+  target = target,
+  x_axis_label = "log2(fold change) Rapa vs DMSO",
+  significance_cutoff = c(0.05, "p.adj_Function"),
+  interactive = FALSE
+) +
+  labs(title = "Without Satterthwaite approximation",
+       subtitle = "On peptide level, dotted line indicates FDR of 0.05 with BH")
+
+
+
+
+
+OldErrorPropagation %>%
+  mutate(Sig_MSstats = pval_MSstats <= 0.05) %>%
+  mutate(Sig_Function = pval_Function <= 0.05) %>%
+  drop_na() %>%
+  ggvenn(c("Sig_MSstats","Sig_Function"), fill_color = c("blue","red"))
+
+
+
+
+```
