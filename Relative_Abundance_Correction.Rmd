@@ -199,7 +199,7 @@ OldErrorPropagation = MSstats_LiP %>%
             by = c("ProteinName"), suffix = c("_pep","_prot")) %>%
   mutate(adj_diff = diff_pep-diff_prot) %>%
   mutate(adj_std_error = sqrt(std_error_pep**2 + std_error_prot**2)) %>%
-  mutate(df = n_obs_pep + n_obs_prot - 2) %>% # NO SATTERTHWAITE APPROXIMATION
+  mutate(df = n_obs_pep - 2) %>% # NO SATTERTHWAITE APPROXIMATION
   mutate(tval = adj_diff/adj_std_error) %>%
   mutate(pval = 2*stats::pt(abs(tval), df, lower.tail = FALSE)) %>%
   mutate(p.adj = p.adjust(pval, method = "BH")) %>%
@@ -274,7 +274,7 @@ volcano_plot(
   labs(title = "With Satterthwaite approximation",
        subtitle = "On peptide level, dotted line indicates FDR of 0.05 with BH")
 
-# Volcano plot using df = 14 columns
+# Volcano plot using df = n_obs(pep) -2
 
 volcano_plot(
   data = OldErrorPropagation,
