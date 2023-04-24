@@ -84,6 +84,7 @@ MSstats_Trp = MSstats_Trp_raw %>%
                 n_obs = DF) %>%
   mutate(n_obs = n_obs + 2)
 
+
 glimpse(MSstats_Trp)
 
 # Adapt column names for MSstats adjusted table to match the function output
@@ -156,6 +157,8 @@ sum(round(ErrorPropagationTest$pval_Function,5) ==
 sum(round(ErrorPropagationTest$p.adj_Function,5) == 
       round(ErrorPropagationTest$p.adj_MSstats,5), na.rm = TRUE)
 
+
+# Plots of MSstats vs New function
 
 ErrorPropagationTest %>%
   ggplot(aes(x=df_MSstats,y=df_Function)) +
