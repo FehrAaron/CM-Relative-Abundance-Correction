@@ -7,23 +7,12 @@ output:
   html_document: default
 ---
  
-The Following Script contains a script and tests thereof for the correction of
-peptide intensities for relative abundance changes in the protein concentration.
-It was specifically written for LiP data but can also be applied to PTM data.
-The function was written based on the approach described by Devon Kohler et al. 
-in https://doi.org/10.1016/j.mcpro.2022.100477 and implemented in the R package
-MSstatsPTM.
+The Following Script contains a script and tests thereof for the correction of peptide intensities for relative abundance changes in the protein concentration.It was specifically written for LiP data but can also be applied to PTM data.The function was written based on the approach described by Devon Kohler et al. in https://doi.org/10.1016/j.mcpro.2022.100477 and implemented in the R packages "MSstatsPTM" and "MSStatsLiP"
 
-In brief, the relative change on the peptide level is corrected for by division
-with the relative change on the protein level. For the statistical test, the 
-pooled standard deviation as well as the tvalue is calculated. The effective 
-degree of freedom are calculated using the Satterthwaite approximation in order
-to take into account that the protein and peptide intensities are not fully
-independent measurements.
+In brief, the relative change on the peptide level is corrected for by division with the relative change on the protein level. For the statistical test, the pooled standard deviation as well as the tvalue is calculated. The effective degree of freedom are calculated using the Satterthwaite approximation in order to take into account that the protein and peptide intensities are not fully independent measurements.
 
-As input, the script takes two differential abundance tables on peptide and 
-protein level. They can be obtained by using the "calculate_diff_abundance()"
-function in the Protti package.
+As input, the script takes two differential abundance tables on peptide and protein level. They can be obtained by using the "calculate_diff_abundance()" function in the Protti package.
+
 The peptide table has to contain the columns:
 
 1. Protein names
@@ -39,11 +28,7 @@ The protein table has to contain the columns:
 3. Standard error
 4. Number of observations
 
-The Data used for this demonstration is LiP-School data (Rapamycin treated HeLa 
-lysate, quadruplicates) which was generated together with Ludovic Gillet. It was 
-analysed using MSstatsLiP with the "LiP-MS_data_analysis_case_control" script in 
-https://github.com/PicottiGroup/ Data-analysis-of-LiP-MS-data-for-high-
-throughput-applications.git without imputation by Valentina Capelletti. 
+The Data used for this demonstration is LiP-School data (Rapamycin treated HeLa lysate, quadruplicates) which was generated together with Ludovic Gillet. It was analysed using MSstatsLiP with the "LiP-MS_data_analysis_case_control" script in https://github.com/PicottiGroup/ Data-analysis-of-LiP-MS-data-for-high-throughput-applications.git without imputation by Valentina Capelletti. 
 
 
 
@@ -110,7 +95,7 @@ ErrorPropagationTest = MSstats_LiP %>%
             by = c("ProteinName"), suffix = c("_pep","_prot")) %>%
   # Adjust log2FC
   mutate(adj_diff = diff_pep-diff_prot) %>%
-  # Calculate pooled std deviation
+  # Perform error propagation of standard error
   mutate(adj_std_error = sqrt(std_error_pep**2 + std_error_prot**2)) %>% 
   # Calculate numerator of Satterthwaite equation
   mutate(numer = (std_error_pep**2 + std_error_prot**2)**2) %>%
@@ -141,7 +126,7 @@ sum(round(ErrorPropagationTest$df_Function,5) ==
 sum(ErrorPropagationTest$adj_diff_Function == 
       ErrorPropagationTest$adj_diff_MSstats, na.rm = TRUE)
 
-# Pooled Standard deviation
+# Standard error
 sum(ErrorPropagationTest$adj_std_error_Function == 
       ErrorPropagationTest$adj_std_error_MSstats, na.rm = TRUE)
 
@@ -171,7 +156,7 @@ ErrorPropagationTest %>%
   ggplot(aes(x=adj_std_error_MSstats,y=adj_std_error_Function)) +
   geom_point() +
   theme_bw() +
-  labs(title = "Degrees of freedom", x = "MSstats", y = "New Function")
+  labs(title = "Adjusted standard errors", x = "MSstats", y = "New Function")
 
 
 ErrorPropagationTest %>%
@@ -185,7 +170,7 @@ ErrorPropagationTest %>%
   ggplot(aes(x=pval_MSstats, y=pval_Function)) +
   geom_point() +
   theme_bw() +
-  labs(title = "Degrees of freedom", x = "MSstats", y = "New Function")
+  labs(title = "P-values", x = "MSstats", y = "New Function")
 
 
 ```
@@ -213,20 +198,20 @@ OldErrorPropagation %>%
   ggplot(aes(x=df_MSstats,y=df_Function)) +
   geom_point() +
   theme_bw() +
-  labs(title = "Degrees of freedom", x = "MSstats", y = "New Function")
+  labs(title = "Degrees of freedom", x = "S.E. approximated df", y = "Old degrees of freedom")
 
 OldErrorPropagation %>%
   ggplot(aes(x=tval_MSstats, y=tval_Function)) +
   geom_point() +
   theme_bw() +
-  labs(title = "T-values", x = "MSstats", y = "New Function")
+  labs(title = "T-values", x = "S.E. approximated df", y = "Old degrees of freedom")
 
 
 OldErrorPropagation %>%
   ggplot(aes(x=adj_diff_MSstats, y=adj_diff_Function)) +
   geom_point() +
   theme_bw() +
-  labs(title = "Adjusted Log2FC", x = "MSstats", y = "New Function")
+  labs(title = "Adjusted Log2FC", x = "S.E. approximated df", y = "Old degrees of freedom")
 
 
 
@@ -234,14 +219,16 @@ OldErrorPropagation %>%
   ggplot(aes(x=pval_MSstats, y=pval_Function)) +
   geom_point() +
   theme_bw() +
-  labs(title = "P-value", x = "MSstats", y = "New Function")
+  labs(title = "P-value",  x = "S.E. approximated df", y = "Old degrees of freedom")
 
 OldErrorPropagation %>%
   ggplot(aes(x=p.adj_MSstats, y=p.adj_Function)) +
   geom_point() +
   theme_bw() +
-  labs(title = "Adj P-value", x = "MSstats", y = "New Function")
+  labs(title = "Benjamini-Hochberg adjusted p-value", x = "S.E. approximated df", y = "Old degrees of freedom")
 ```
+
+As one can see, when using the Satterthwaite equation for the approximation for the degrees of freedom, the p values are slightly lower because it also includes information from the protein measurements. The results are ranked the same way but there are slightly more significant observations
 
 
 ```{r}
@@ -251,7 +238,10 @@ OldErrorPropagation %>%
   mutate(Sig_MSstats = p.adj_MSstats <= 0.05) %>%
   mutate(Sig_Function = p.adj_Function <= 0.05) %>%
   drop_na() %>%
-  ggvenn(c("Sig_MSstats","Sig_Function"), fill_color = c("blue","red"))
+  ggvenn(c("Sig_MSstats","Sig_Function"), fill_color = c("blue","red"))+
+  labs(title = "Significant hits with BH correction",
+       subtitle = "On peptide level, adjusted p-value <= 0.05")
+
 
 
 
@@ -299,7 +289,9 @@ OldErrorPropagation %>%
   mutate(Sig_MSstats = pval_MSstats <= 0.05) %>%
   mutate(Sig_Function = pval_Function <= 0.05) %>%
   drop_na() %>%
-  ggvenn(c("Sig_MSstats","Sig_Function"), fill_color = c("blue","red"))
+  ggvenn(c("Sig_MSstats","Sig_Function"), fill_color = c("blue","red"))+
+  labs(title = "Significant hits without BH correction",
+       subtitle = "On peptide level, p-value <= 0.05")
 
 
 
