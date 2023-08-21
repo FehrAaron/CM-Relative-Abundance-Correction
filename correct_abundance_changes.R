@@ -2,14 +2,16 @@
 #'
 #' Performs the correction of LiP-peptides for changes in protein abundance
 #'
-#' @param lip_data a data frame containing at least the input variables.
-#' @param trp_data a data frame containing at least the input variables minus the grouping column.
-#' @param comparison a character column in the \code{lip_data} and \code{trp_data} data frames 
-#' that contains the comparisons between conditions.
+#' @param lip_data a data frame containing at least the input variables. Ideally, 
+#' the result from the \code{calculate_diff_abundance} function is used.
+#' @param trp_data a data frame containing at least the input variables minus the grouping column.Ideally, 
+#' the result from the \code{calculate_diff_abundance} function is used.
 #' @param protein_id a character column in the \code{lip_data} and \code{trp_data} data frames 
 #' that contains protein identifiers.
 #' @param grouping a character column in the \code{lip_data} data frame that contains precursor or
 #' peptide identifiers.
+#' @param comparison a character column in the \code{lip_data} and \code{trp_data} data frames 
+#' that contains the comparisons between conditions.
 #' @param diff a numeric column in the \code{lip_data} and \code{trp_data} data frames
 #' that contains log2-fold changes for peptide or protein quantities.
 #' @param n_obs a numeric column in the \code{lip_data} and \code{trp_data} data frames
@@ -83,13 +85,8 @@
 #' 
 #'   lip_data = diff_lip,
 #'   trp_data = diff_trp,
-#'   comparison = comparison,
 #'   protein_id = pg_protein_accessions,
 #'   grouping = eg_precursor_id,
-#'   diff = diff,
-#'   n_obs = n_obs,
-#'   std_error = std_error,
-#'   p_adj_method = "BH",
 #'   retain_columns = c("missingness"),
 #'   method = "satterthwaite")
 #' 
@@ -99,12 +96,12 @@
 correct_abundance_changes = function(
     lip_data,
     trp_data,
-    comparison,
     protein_id,
     grouping,
-    diff,
-    n_obs,
-    std_error,
+    comparison = comparison,
+    diff = diff,
+    n_obs = n_obs,
+    std_error = std_error,
     p_adj_method = "BH",
     retain_columns = NULL,
     method = c("satterthwaite","no_df_approximation")){
@@ -151,7 +148,7 @@ correct_abundance_changes = function(
   
   percent_unmatched = round(n_unmatched/nrow(combined_data)*100, 2)
   
-  message(paste0("No protein data was available for ",n_unmatched," peptides (",percent_unmatched, "%)."))
+  message(paste0("No protein data was available for ",n_unmatched," peptides (",percent_unmatched, "% of dataset)."))
     
   if (method == "satterthwaite"){
 
